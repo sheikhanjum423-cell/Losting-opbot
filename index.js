@@ -3,7 +3,7 @@ const http = require('http');
 
 // --- CONFIGURATION ---
 const TG_TOKEN = "7758188204:AAHjfAplyTvRvuyqhfbWXM2ezI2iGp5Rtk0";
-const GROQ_KEY = "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";
+const GROQ_KEY = "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"; // Nayi Key Updated
 let lastId = 0;
 let userMemories = {}; 
 
@@ -31,7 +31,6 @@ async function getAIReply(chatId, userName, text) {
     let history = userMemories[chatId];
     history.push({ role: "user", content: text });
 
-    // History management (Keep last 10 messages for memory)
     if (history.length > 11) history.splice(1, 2);
 
     try {
@@ -42,14 +41,18 @@ async function getAIReply(chatId, userName, text) {
                 "Content-Type": "application/json" 
             },
             body: JSON.stringify({ 
-                model: "llama-3.3-70b-versatile", 
+                model: "llama-3.1-8b-instant", // High speed & High limit model
                 messages: history,
                 max_tokens: 100, 
                 temperature: 0.9 
             })
         });
 
-        if (!res.ok) throw new Error("API Limit reached");
+        if (!res.ok) {
+            const errorData = await res.json();
+            console.log("API Error:", errorData);
+            throw new Error("API Limit");
+        }
 
         const data = await res.json();
         const aiMsg = data.choices[0].message.content;
@@ -84,7 +87,7 @@ async function poll() {
             }
         }
     } catch (e) {
-        console.log("Polling Error... Retrying");
+        console.log("Polling Error...");
     }
     setTimeout(poll, 1000);
 }
@@ -95,5 +98,5 @@ http.createServer((req, res) => {
     res.end();
 }).listen(process.env.PORT || 3000);
 
-console.log("Bot started...");
+console.log("Bot started with New Key...");
 poll();
