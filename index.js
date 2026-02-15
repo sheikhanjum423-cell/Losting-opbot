@@ -1,27 +1,29 @@
 const fetch = require('node-fetch');
 const http = require('http');
 
+// --- CONFIGURATION ---
 const TG_TOKEN = "7758188204:AAHjfAplyTvRvuyqhfbWXM2ezI2iGp5Rtk0";
 const GROQ_KEY = "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";
 let lastId = 0;
 let userMemories = {}; 
 
+// --- AI LOGIC WITH PERSONALITY ---
 async function getAIReply(chatId, userName, text) {
     if (!userMemories[chatId]) {
         userMemories[chatId] = [
             { 
                 role: "system", 
-                content: `Tera naam 'Yaar Bot' hai aur tu Losting ka Digital Twin hai. 
-                Teri 2 personalities hain:
+                content: `Tera naam 'Yaar Bot' hai aur tu Losting ka Digital Twin hai.
+                Teri personality user ke tone par depend karti hai:
 
-                1. **ROMANTIC MODE**: Agar samne wala banda (ladki) tujhe 'Babu', 'Shona', 'Jaan', 'Love' bole ya romantic baatein kare, toh ekdum sweetly aur romantically baat kar. Thoda pyaar dikha, 'Baby' ya 'Sweetie' jaise words use kar aur flirting kar.
+                1. **ROMANTIC MODE**: Agar samne wali ladki tujhe 'Babu', 'Shona', 'Jaan', 'Love' bole ya romantic/sweet baatein kare, toh ekdum Romeo ban ja. Sweetly aur romantically baat kar, thoda flirt kar, 'Baby' ya 'Jaan' bol.
                 
-                2. **DOST MODE**: Agar koi dost 'Bhai', 'Abe', 'Oye' bole, toh wahi purana style—'Kaisan ba', 'Badhiya re', 'Jhingur' bol ke mazaak uda. 
+                2. **DOST MODE**: Agar koi dost 'Bhai', 'Abe', 'Oye' bole, toh ekdum desi bakchodi kar. 'Kaisan ba', 'Badhiya re', 'Jhingur' jaise words use kar aur mazaak uda. 
 
-                **General Rules**:
-                - Replies ekdum short aur desi Hinglish mein rakh.
-                - Har bande ke tone ko samajh kar reply de. 
-                - Zyada gyaan mat pel, bas vibe match kar.`
+                **Strict Rules**:
+                - Replies ekdum short (1-2 lines) aur desi Hinglish mein rakh.
+                - Zyada gyaan ya AI wali baatein mat kar.
+                - Bilkul insaan ki tarah behave kar.`
             }
         ];
     }
@@ -29,36 +31,50 @@ async function getAIReply(chatId, userName, text) {
     let history = userMemories[chatId];
     history.push({ role: "user", content: text });
 
-    if (history.length > 15) history.splice(1, 2);
+    // History management (Keep last 10 messages for memory)
+    if (history.length > 11) history.splice(1, 2);
 
     try {
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
-            headers: { "Authorization": `Bearer ${GROQ_KEY}`, "Content-Type": "application/json" },
+            headers: { 
+                "Authorization": `Bearer ${GROQ_KEY}`, 
+                "Content-Type": "application/json" 
+            },
             body: JSON.stringify({ 
                 model: "llama-3.3-70b-versatile", 
                 messages: history,
                 max_tokens: 100, 
-                temperature: 0.9 // Romantic baaton mein thoda "feel" aane ke liye
+                temperature: 0.9 
             })
         });
+
+        if (!res.ok) throw new Error("API Limit reached");
+
         const data = await res.json();
         const aiMsg = data.choices[0].message.content;
         history.push({ role: "assistant", content: aiMsg });
         return aiMsg;
-    } catch (e) { return "Bhai, network issue hai shayad!"; }
+    } catch (e) { 
+        console.log("Error:", e);
+        return "Bhai, piche se system thoda slow hai, 2 minute baad try kar!"; 
+    }
 }
 
+// --- TELEGRAM POLLING ---
 async function poll() {
     try {
         const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getUpdates?offset=${lastId + 1}&timeout=30`);
         const data = await res.json();
-        if (data.result) {
+        
+        if (data.result && data.result.length > 0) {
             for (let u of data.result) {
                 lastId = u.update_id;
                 if (u.message && u.message.text) {
                     const chatId = u.message.chat.id;
-                    const reply = await getAIReply(chatId, u.message.from.first_name, u.message.text);
+                    const name = u.message.from.first_name || "Bhai";
+                    const reply = await getAIReply(chatId, name, u.message.text);
+                    
                     await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -67,9 +83,17 @@ async function poll() {
                 }
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        console.log("Polling Error... Retrying");
+    }
     setTimeout(poll, 1000);
 }
 
-http.createServer((req, res) => { res.write("Romantic Twin Live!"); res.end(); }).listen(process.env.PORT || 3000);
+// --- KEEP ALIVE SERVER ---
+http.createServer((req, res) => {
+    res.write("Twin Bot is Active!");
+    res.end();
+}).listen(process.env.PORT || 3000);
+
+console.log("Bot started...");
 poll();
